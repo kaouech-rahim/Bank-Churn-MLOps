@@ -11,7 +11,7 @@
   2. **Étudiant 2 (Lead Modeling & MLflow) :** AbdRahim Kaouech — Email : `...`
   3. **Étudiant 3 (Lead Serving & CI/CD) :** Fatma Ayadi — Email : `...`
   * *L'observabilité (drift, Prometheus, dashboard) est partagée entre les 3 membres.*
-* **Lien vers le Dépôt GitHub :** `https://github.com/mon-organisation/bank-churn-mlops`
+* **Lien vers le Dépôt GitHub :** `https://github.com/kaouech-rahim/Bank-Churn-MLOps.git`
 
 ---
 
