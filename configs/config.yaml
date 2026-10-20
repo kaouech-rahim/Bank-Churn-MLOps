@@ -1,0 +1,66 @@
+# ============================================================
+# Configuration centrale du projet (aucun chemin ni seuil en dur dans le code)
+# ============================================================
+
+data:
+  raw_path: "data/raw/churn.csv"                              # fichier complet (10 000 lignes)
+  reference_path: "data/raw/churn_reference.csv"              # 5 000 lignes : entrainement
+  production_pool_path: "data/raw/churn_production_pool.csv"  # 5 000 lignes : simulation de production / drift
+  reference_size: 5000
+  test_size: 0.2
+  random_state: 42
+  train_path: "data/processed/train.csv"
+  test_path: "data/processed/test.csv"
+  scaler_path: "data/processed/scaler_params.json"
+
+features:
+  id_columns: ["RowNumber", "CustomerId", "Surname"]          # colonnes techniques a supprimer
+  target_column: "Exited"                                     # 1 = le client a quitte la banque
+  # Colonne binaire -> valeur numerique (la cle = nom de colonne)
+  binary_mapping:
+    Gender:
+      Male: 1
+      Female: 0
+  # Colonne categorielle -> liste ordonnee des valeurs possibles
+  # (la 1ere valeur est la modalite de reference, supprimee par drop_first)
+  category_values:
+    Geography: ["France", "Germany", "Spain"]
+  numerical_columns:
+    - "CreditScore"
+    - "Age"
+    - "Tenure"
+    - "Balance"
+    - "NumOfProducts"
+    - "EstimatedSalary"
+
+# Contrat de donnees : valeurs autorisees et bornes [min, max] par colonne
+schema:
+  allowed_values:
+    Gender: ["Female", "Male"]
+    Geography: ["France", "Germany", "Spain"]
+  ranges:
+    CreditScore: [300, 850]
+    Age: [18, 100]
+    Tenure: [0, 50]
+    Balance: [0, 1000000]
+    NumOfProducts: [1, 10]
+    EstimatedSalary: [0, 1000000]
+    HasCrCard: [0, 1]
+    IsActiveMember: [0, 1]
+
+drift:
+  alpha: 0.05                 # seuil de significativite des tests KS et chi2
+  psi_threshold: 0.10         # PSI minimal pour qu'une variable compte comme "en drift"
+  drift_share_threshold: 0.30 # part de variables en drift qui declenche l'alerte critique
+  bins: 10                    # nombre de tranches pour le calcul du PSI
+  min_rows: 30                # taille minimale d'un echantillon analysable
+  simulation_seed: 42
+  report_path: "reports/drift_report.html"
+  # Scenarios d'injection de drift (utilises par DriftSimulator)
+  scenarios:
+    none: {}                  # aucun drift : donnees inchangees
+    strong:
+      age_shift: 8            # +8 ans en moyenne
+      balance_factor: 1.3     # soldes positifs x 1.3
+      target_country: "Germany"
+      target_share: 0.5       # l'Allemagne passe a ~50 % des clients
