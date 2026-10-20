@@ -1,0 +1,72 @@
+{
+  "scenario": "strong",
+  "n_reference": 5000,
+  "n_current": 5000,
+  "n_features": 8,
+  "n_drifted": 3,
+  "drift_share": 0.375,
+  "critical": true,
+  "drifted_features": [
+    "Age",
+    "Balance",
+    "Geography"
+  ],
+  "features": {
+    "CreditScore": {
+      "test": "ks",
+      "statistic": 0.012,
+      "p_value": 0.8643325152980597,
+      "psi": 0.008226413264451567,
+      "drifted": false
+    },
+    "Age": {
+      "test": "ks",
+      "statistic": 0.3722,
+      "p_value": 1.41718870964001e-308,
+      "psi": 0.8960230203463003,
+      "drifted": true
+    },
+    "Tenure": {
+      "test": "ks",
+      "statistic": 0.0144,
+      "p_value": 0.6777877521935483,
+      "psi": 0.006448269413777521,
+      "drifted": false
+    },
+    "Balance": {
+      "test": "ks",
+      "statistic": 0.3762,
+      "p_value": 2.088738624e-315,
+      "psi": 0.7826129803853736,
+      "drifted": true
+    },
+    "NumOfProducts": {
+      "test": "ks",
+      "statistic": 0.029,
+      "p_value": 0.02983643245840902,
+      "psi": 0.0033678586475483626,
+      "drifted": false
+    },
+    "EstimatedSalary": {
+      "test": "ks",
+      "statistic": 0.0198,
+      "p_value": 0.2808939724267857,
+      "psi": 0.011647820074410538,
+      "drifted": false
+    },
+    "Gender": {
+      "test": "chi2",
+      "statistic": 2.325963580548711,
+      "p_value": 0.1272314125254361,
+      "psi": 0.0009551084039098849,
+      "drifted": false
+    },
+    "Geography": {
+      "test": "chi2",
+      "statistic": 716.7710586172257,
+      "p_value": 2.2653860784208898e-156,
+      "psi": 0.2959332483937636,
+      "drifted": true
+    }
+  }
+}
