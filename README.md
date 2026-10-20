@@ -83,37 +83,88 @@ poetry run pre-commit run --all-files                # 7 Passed
 
 ## 4. Remote DVC (pour partager les données)
 
-`dvc repro` marche sans remote. Le remote sert à deux choses : AbdRahim et Fatma
-récupèrent les données avec `dvc pull`, et le prof note « remote storage configuré »
-(1,5 pt). Un dossier sur ton PC n'est pas partagé avec les autres : pour 3 machines,
-il faut un stockage commun.
+`dvc repro` marche sans remote. Le remote sert à deux choses : les coéquipiers
+récupèrent les données, et le prof note « remote storage configuré » (1,5 pt).
 
-**Option A : dossier local, pour tester seul** *(testé sous Linux)*
+**Remote du dépôt : S3** *(déjà déclaré dans `.dvc/config`, non testé ici : il demande
+des identifiants AWS)*
+```ini
+['remote "storage"']
+    url = s3://mlops-project-ftima
+    profile = dvc
+```
+Le plugin S3 est dans `pyproject.toml` (`dvc[s3]`). Pour `dvc push` et `dvc pull`, il
+faut des identifiants AWS qui ont accès au bucket (à demander à son propriétaire),
+enregistrés sous le profil `dvc` :
 ```powershell
-poetry run dvc remote add -d storage ../dvc-storage
+aws configure --profile dvc
 poetry run dvc push
 ```
+Sans AWS CLI, tu peux les donner à DVC directement (ils vont dans `.dvc/config.local`,
+ignoré par Git : ne les committe jamais) :
+```powershell
+poetry run dvc remote modify --local storage access_key_id "<clé>"
+poetry run dvc remote modify --local storage secret_access_key "<secret>"
+```
 
-**Option B : Google Drive, pour le groupe** *(commandes de la doc DVC ; l'installation
-du plugin est testée, la connexion à ton compte Google ne l'est pas)*
-1. Crée un dossier Drive `dvc-storage` et partage-le (éditeur) avec AbdRahim et Fatma.
-   Copie son identifiant dans l'URL : `https://drive.google.com/drive/folders/<ID>`.
-2. Ajoute le plugin, puis déclare le remote :
+**Option A : dossier local personnel, si tu n'as pas accès au S3** *(testé sous Linux)*
+```powershell
+poetry run dvc remote add --local -d local-storage ../dvc-storage
+poetry run dvc push
+```
+`--local` écrit dans `.dvc/config.local` (ignoré par Git) : le remote S3 du dépôt n'est
+pas modifié. `../dvc-storage` est un dossier **à côté** du dépôt, jamais dedans.
+
+Un dossier local n'est pas partagé : après un clone, `dvc pull` échoue
+(`Is your cache up to date?`). Le chemin à suivre est :
+```powershell
+git clone https://github.com/kaouech-rahim/Bank-Churn-MLOps.git
+cd Bank-Churn-MLOps
+poetry config virtualenvs.in-project true
+poetry install
+.\.venv\Scripts\Activate.ps1
+# copier le MEME churn.csv (celui d'Amir) dans data\raw\
+poetry run dvc repro
+poetry run pytest tests -q
+```
+Le `churn.csv` doit être strictement identique : compare
+`Get-FileHash -Algorithm MD5 data\raw\churn.csv` avec la ligne `md5:` de
+`data\raw\churn.csv.dvc`.
+
+**Option B : DagsHub, sans application Google** *(commandes de la doc DagsHub ;
+non testé ici, et la doc trouvée vient de copies : vérifie qu'elle correspond à
+l'interface actuelle)*
+1. Crée un compte DagsHub et un dépôt, invite les 2 autres.
+2. Chacun crée un token dans ses paramètres DagsHub.
+3. Chacun lance (les 3 dernières lignes vont dans `.dvc/config.local`, ignoré par
+   Git : ne partage jamais le token) :
+```powershell
+poetry run dvc remote add -d origin https://dagshub.com/<utilisateur>/<depot>.dvc
+poetry run dvc remote modify origin --local auth basic
+poetry run dvc remote modify origin --local user <utilisateur>
+poetry run dvc remote modify origin --local password <token>
+poetry run dvc push -r origin
+```
+
+**Option C : Google Drive, fragile** *(non testé ici)*. La doc DVC indique que
+l'application Google par défaut de DVC est bloquée (« This app is blocked »). Il faut
+créer ta propre application Google Cloud (Drive API activée, écran de consentement,
+identifiant OAuth de type « Application de bureau »), comme décrit dans la doc DVC
+« Google Drive ». Des utilisateurs signalent des échecs même ainsi : application « non
+vérifiée » (ajoute les 3 adresses comme utilisateurs de test), erreur
+`Failed to authenticate GDrive: 'access_token'`, jeton qui expire après 7 jours.
 ```powershell
 poetry add "dvc[gdrive]"
-poetry run dvc remote add -d storage gdrive://<ID>
+poetry run dvc remote add -d storage gdrive://<ID_du_dossier>
+poetry run dvc remote modify --local storage gdrive_client_id "<client-id>"
+poetry run dvc remote modify --local storage gdrive_client_secret "<client-secret>"
 poetry run dvc push
 ```
-3. Au premier `push`, DVC ouvre le navigateur pour te connecter à Google : autorise.
-   Si Google refuse (application non vérifiée), crée un identifiant OAuth dans Google
-   Cloud et renseigne `gdrive_client_id` et `gdrive_client_secret` avec
-   `dvc remote modify --local` (voir la doc DVC « Google Drive »).
-4. Partage avec les autres : `git add .` puis commit et push (inclut `.dvc/config`,
-   `pyproject.toml` et `poetry.lock`).
+Le dossier Drive doit être partagé avec des personnes précises (« Éditeur »), pas avec
+« Tous les utilisateurs disposant du lien ».
 
-**Côté coéquipier :** `git pull`, `poetry install`, `poetry run dvc pull`
-(il doit avoir accès au dossier Drive). Les secrets vont dans `.dvc/config.local`,
-que Git ignore déjà : ne le partage jamais.
+**Côté coéquipier :** `git pull`, `poetry install`, configurer ses identifiants avec
+les commandes `--local` de l'option choisie, puis `poetry run dvc pull`.
 
 ---
 
