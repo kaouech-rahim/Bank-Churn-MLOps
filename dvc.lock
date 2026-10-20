@@ -1,0 +1,115 @@
+schema: '2.0'
+stages:
+  split:
+    cmd: poetry run python -m src.data.split_data --config configs/config.yaml
+    deps:
+    - path: data/raw/churn.csv
+      hash: md5
+      md5: 496aee8fbfdfa1dfb6daa9dbca5d1a01
+      size: 684858
+    - path: src/data/load_data.py
+      hash: md5
+      md5: d1e0c6df4f28720cf08275c23830c0b2
+      size: 875
+    - path: src/data/split_data.py
+      hash: md5
+      md5: dfa52adb6aa0629f478f98735d19595a
+      size: 3646
+    params:
+      configs/config.yaml:
+        data.random_state: 42
+        data.reference_size: 5000
+    outs:
+    - path: data/raw/churn_production_pool.csv
+      hash: md5
+      md5: e842f1f7d21bf502921c53167f9f8fd4
+      size: 346666
+    - path: data/raw/churn_reference.csv
+      hash: md5
+      md5: 299531108d253139b830875a1abbcc55
+      size: 345950
+  preprocess:
+    cmd: poetry run python -m src.features.preprocess --config 
+      configs/config.yaml
+    deps:
+    - path: data/raw/churn_reference.csv
+      hash: md5
+      md5: 299531108d253139b830875a1abbcc55
+      size: 345950
+    - path: src/features/preprocess.py
+      hash: md5
+      md5: 69296a45bbcc9cb91bee75359aaa995b
+      size: 9137
+    params:
+      configs/config.yaml:
+        data.random_state: 42
+        data.test_size: 0.2
+        features:
+          id_columns:
+          - RowNumber
+          - CustomerId
+          - Surname
+          target_column: Exited
+          binary_mapping:
+            Gender:
+              Male: 1
+              Female: 0
+          category_values:
+            Geography:
+            - France
+            - Germany
+            - Spain
+          numerical_columns:
+          - CreditScore
+          - Age
+          - Tenure
+          - Balance
+          - NumOfProducts
+          - EstimatedSalary
+        schema:
+          allowed_values:
+            Gender:
+            - Female
+            - Male
+            Geography:
+            - France
+            - Germany
+            - Spain
+          ranges:
+            CreditScore:
+            - 300
+            - 850
+            Age:
+            - 18
+            - 100
+            Tenure:
+            - 0
+            - 50
+            Balance:
+            - 0
+            - 1000000
+            NumOfProducts:
+            - 1
+            - 10
+            EstimatedSalary:
+            - 0
+            - 1000000
+            HasCrCard:
+            - 0
+            - 1
+            IsActiveMember:
+            - 0
+            - 1
+    outs:
+    - path: data/processed/scaler_params.json
+      hash: md5
+      md5: 0ce72df24811255e05c44103360f44f3
+      size: 367
+    - path: data/processed/test.csv
+      hash: md5
+      md5: 9db925961c2ad104093e3c94818e3f70
+      size: 86857
+    - path: data/processed/train.csv
+      hash: md5
+      md5: b307ec34ea45b3e1549f066886907b5d
+      size: 345782

@@ -1,0 +1,32 @@
+stages:
+  # Etape 1 : separer churn.csv en reference (5000 lignes) et pool de production
+  split:
+    cmd: poetry run python -m src.data.split_data --config configs/config.yaml
+    deps:
+      - src/data/split_data.py
+      - src/data/load_data.py
+      - data/raw/churn.csv
+    params:
+      - configs/config.yaml:
+          - data.reference_size
+          - data.random_state
+    outs:
+      - data/raw/churn_reference.csv
+      - data/raw/churn_production_pool.csv
+
+  # Etape 2 : nettoyage, validation du schema, split train/test, encodage
+  preprocess:
+    cmd: poetry run python -m src.features.preprocess --config configs/config.yaml
+    deps:
+      - src/features/preprocess.py
+      - data/raw/churn_reference.csv
+    params:
+      - configs/config.yaml:
+          - data.test_size
+          - data.random_state
+          - features
+          - schema
+    outs:
+      - data/processed/train.csv
+      - data/processed/test.csv
+      - data/processed/scaler_params.json
