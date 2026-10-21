@@ -72,5 +72,19 @@
 * [ ] **Jalon 4 (S6) :** Flow Prefect orchestré, Détection de drift & Prometheus
 * [ ] **Jalon Final (S8) :** Tag `v1.0-release`, Rapport PDF et Soutenance
 
-> **Avis de l'Enseignant :** `[  ] VALIDÉ  /  [  ] À REVOIR`  
+> **Avis de l'Enseignant :** `[  ] VALIDÉ  /  [  ] À REVOIR`\
 > **Commentaires :**
+
+---
+
+## 7. Mise à jour après réalisation (octobre 2026)
+
+Le cadrage ci-dessus est conservé tel qu'il a été soumis. Les choix finalement
+implémentés diffèrent sur les points suivants :
+
+| Point du synopsis | Réalisation effective | Raison |
+|---|---|---|
+| Seuil d'alerte « PSI ≥ 0,20 sur une variable clé ou ≥ 30 % de variables en dérive » | Variable en drift si test KS/χ² significatif (p < 0,05) **et** PSI ≥ 0,10 ; alerte critique si ≥ 30 % des 8 variables dérivent | Double critère : évite les fausses alertes des tests sur de gros échantillons |
+| Injection du drift par « permutation » de `Geography` | Ré-échantillonnage pondéré (Allemagne à ≈ 50 %), âge + 8 ans, soldes × 1,3 | `DriftSimulator`, paramètres dans `configs/config.yaml` |
+| KPI rappel ≥ 0,70 | Rappel obtenu 0,696 au seuil 0,5 (F1 0,634, ROC-AUC 0,868) | KPI non modifié ; écart documenté dans le rapport |
+| Remote DVC local | Remote à harmoniser (voir README §7) | Le chemin versionné n'existe que sur un poste |
