@@ -21,3 +21,26 @@ models/*.pkl
 htmlcov/
 .ipynb_checkpoints/
 reports/*.html
+
+# MLflow (backend SQLite et artifact store locaux)
+mlflow.db
+mlruns/
+
+# Modeles et rapports generes
+models/*.joblib
+reports/plots/
+reports/*.png
+reports/demo_*.csv
+cml_report/
+
+# Reentrainement (fichiers de travail generes par le flow de drift)
+data/retrain/
+
+# Secrets et configuration locale
+.env
+.dvc/config.local
+*.pem
+
+# Bundles de modeles copies pour le Blue/Green
+deploy/models/*/*
+!deploy/models/*/.gitkeep

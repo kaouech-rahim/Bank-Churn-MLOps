@@ -2,11 +2,11 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
-      # dvc.lock est genere par DVC : on ne le reformate pas
+      # dvc.lock et models/*.json sont generes par DVC : on ne les reformate pas
       - id: trailing-whitespace
-        exclude: ^dvc\.lock$
+        exclude: ^(dvc\.lock|models/.*\.json)$
       - id: end-of-file-fixer
-        exclude: ^dvc\.lock$
+        exclude: ^(dvc\.lock|models/.*\.json)$
       - id: check-yaml
       - id: check-added-large-files
         args: ['--maxkb=5000']
