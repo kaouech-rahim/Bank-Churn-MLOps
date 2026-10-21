@@ -13,10 +13,12 @@ import yaml
 from mlflow.tracking import MlflowClient
 from prefect.testing.utilities import prefect_test_harness
 
-from pipelines.drift_flow import drift_flow, score_current_model, should_promote
+from pipelines.drift_flow import drift_flow
 from pipelines.training_flow import training_flow
 from src.config import load_config
+from src.models.promotion import score_current_model, should_promote
 from src.models.registry import get_production_version
+from tests.test_models import stages_of, use_weak_candidate
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -87,8 +89,10 @@ def test_drift_flow_strong_triggers_retraining(ml_config_path: Path) -> None:
     retraining = result["retraining"]
     assert retraining["triggered"] is True
     assert retraining["current_roc_auc"] is not None
-    expected = retraining["new_roc_auc"] >= retraining["current_roc_auc"]
+    expected = retraining["reason"] == "better_or_equal"
     assert retraining["promoted"] is expected
+    if expected:  # promu : la metrique principale n'a pas baisse
+        assert retraining["new_roc_auc"] >= retraining["current_roc_auc"]
 
     client = MlflowClient(tracking_uri=cfg["mlflow"]["tracking_uri"])
     prod = get_production_version(cfg["mlflow"]["registered_model_name"], client)
@@ -139,3 +143,18 @@ def test_drift_flow_without_labels_skips_retraining(
     result = drift_flow(str(ml_config_path), scenario="strong")
     assert result["critical"] is True
     assert result["retraining"] == {"triggered": False, "reason": "labels_missing"}
+
+
+def test_training_flow_does_not_promote_worse_candidate(ml_config_path: Path) -> None:
+    """Flow planifie : un candidat moins bon n'est ni promu ni exporte."""
+    cfg = load_config(ml_config_path)
+    training_flow(str(ml_config_path))
+    served = Path(cfg["models"]["model_path"]).read_bytes()
+    use_weak_candidate(ml_config_path)
+
+    result = training_flow(str(ml_config_path))
+
+    assert result["decision"]["promote"] is False
+    assert result["decision"]["reason"] == "worse"
+    assert stages_of(cfg) == {"1": "Production", "2": "Staging"}
+    assert Path(cfg["models"]["model_path"]).read_bytes() == served

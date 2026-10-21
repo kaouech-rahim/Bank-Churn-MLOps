@@ -77,6 +77,13 @@ mlflow:
 
 models:
   champion_metric: "roc_auc"                   # regle de choix du champion : meilleur ROC-AUC
+  # Regles de promotion d'un nouveau champion (src/models/promotion.py).
+  # Pas de plancher de rappel : le KPI 0.70 est suivi dans le rapport, mais la v5
+  # (0.696, IC95 [0.63 ; 0.76]) n'est pas statistiquement differente de 0.70.
+  promotion:
+    min_improvement: 0.0     # metrique principale : candidat >= en service + gain
+    max_recall_drop: 0.0     # rappel au seuil : candidat >= rappel en service - tolerance
+    recall_floor: null       # plancher absolu (KPI 0.70) desactive : v5 = 0.696 sur le test
   decision_threshold: 0.5                      # proba >= seuil -> churn = 1
   model_path: "models/model.joblib"            # export du champion pour l'API
   metadata_path: "models/metadata.json"
@@ -126,7 +133,7 @@ prefect:
   drift_scenario: "strong"    # scenario simule pour la demo (none, strong)
   batch_size: 2000            # taille du lot de production analyse
   retrain_dir: "data/retrain" # fichiers de travail du reentrainement (sources intactes)
-  min_improvement: 0.0        # nouveau modele promu si AUC_new >= AUC_old + min_improvement
+  min_improvement: 0.0        # gain de ROC-AUC exige apres drift (rappel : models.promotion)
 
 # ============================================================
 # Monitoring Prometheus et deploiement Blue/Green

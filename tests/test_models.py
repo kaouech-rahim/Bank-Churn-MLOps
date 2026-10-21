@@ -6,11 +6,13 @@ aucun serveur MLflow, aucun vrai churn.csv, aucun reseau.
 
 import json
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
 from mlflow.tracking import MlflowClient
 
 from src.config import load_config
@@ -152,11 +154,12 @@ def test_run_training_logs_runs_and_promotes(ml_config_path: Path) -> None:
     best = max(r["metrics"]["roc_auc"] for r in out["results"])
     assert out["champion"]["metrics"]["roc_auc"] == best
 
-    # 3. Registry : version 1 en Production avec description QA et alias
+    # 3. Registry : version 1 en Production, decision tracee et alias
     name = cfg["mlflow"]["registered_model_name"]
     prod = get_production_version(name, client)
     assert prod is not None and str(prod.version) == "1"
-    assert "QA" in prod.description
+    assert "decision : no_current_model" in prod.description
+    assert out["decision"]["reason"] == "no_current_model"
     assert str(client.get_model_version_by_alias(name, "champion").version) == "1"
 
     # 4. Export : modele, metadonnees et scaler presents et coherents
@@ -209,3 +212,165 @@ def test_production_model_inference(ml_config_path: Path) -> None:
     mlflow.set_tracking_uri(cfg["mlflow"]["tracking_uri"])
     model = load_production_model(cfg["mlflow"]["registered_model_name"])
     assert hasattr(model, "predict")
+
+
+# ------------------------------------------------------------ garde de promotion
+WEAK_CANDIDATE = {
+    "RF-Faible": {
+        "algorithm": "random_forest",
+        "params": {"n_estimators": 1, "max_depth": 1, "random_state": 0},
+    }
+}
+
+
+def use_weak_candidate(config_path: Path) -> None:
+    """Remplace les candidats par un modele volontairement faible."""
+    with open(config_path, encoding="utf-8") as f:
+        local = yaml.safe_load(f)
+    local["models"]["candidates"] = WEAK_CANDIDATE
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(local, f)
+
+
+def stages_of(cfg: dict) -> dict:
+    client = MlflowClient(tracking_uri=cfg["mlflow"]["tracking_uri"])
+    name = cfg["mlflow"]["registered_model_name"]
+    return {
+        str(v.version): v.current_stage
+        for v in client.search_model_versions(f"name='{name}'")
+    }
+
+
+def test_worse_candidate_is_not_promoted(ml_config_path: Path) -> None:
+    """Un candidat moins bon reste en Staging ; le modele servi ne change pas."""
+    cfg = load_config(ml_config_path)
+    run_training(str(ml_config_path))  # v1 en Production
+    served = Path(cfg["models"]["model_path"]).read_bytes()
+
+    use_weak_candidate(ml_config_path)
+    out = run_training(str(ml_config_path))
+
+    decision = out["decision"]
+    assert decision["candidate_score"] < decision["current_score"]
+    assert decision["promote"] is False and decision["reason"] == "worse"
+    assert stages_of(cfg) == {"1": "Production", "2": "Staging"}
+    client = MlflowClient(tracking_uri=cfg["mlflow"]["tracking_uri"])
+    name = cfg["mlflow"]["registered_model_name"]
+    assert str(client.get_model_version_by_alias(name, "champion").version) == "1"
+    assert Path(cfg["models"]["model_path"]).read_bytes() == served
+    assert str(out["metadata"]["version"]) == "1"
+
+
+def test_evaluation_failure_blocks_promotion(ml_config_path: Path) -> None:
+    """Modele en service illisible : aucune promotion, rien n'est ecrase."""
+    cfg = load_config(ml_config_path)
+    run_training(str(ml_config_path))
+    model_path = Path(cfg["models"]["model_path"])
+    model_path.write_bytes(b"fichier corrompu")
+
+    out = run_training(str(ml_config_path))
+
+    assert out["decision"]["promote"] is False
+    assert out["decision"]["reason"].startswith("evaluation_failed")
+    assert stages_of(cfg) == {"1": "Production", "2": "Staging"}
+    assert model_path.read_bytes() == b"fichier corrompu"
+
+
+# ------------------------------------------------------------ patch 01b
+def set_models_config(config_path: Path, **updates: Any) -> None:
+    """Modifie la section models de la config temporaire."""
+    with open(config_path, encoding="utf-8") as f:
+        local = yaml.safe_load(f)
+    for key, value in updates.items():
+        local["models"][key] = value
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(local, f)
+
+
+def test_recall_regression_blocks_promotion(ml_config_path: Path) -> None:
+    """Candidat aussi bon en ROC-AUC mais detectant moins de departs : refuse."""
+    cfg = load_config(ml_config_path)
+    balanced = {
+        "RF-Pondere": {
+            "algorithm": "random_forest",
+            "params": {
+                "n_estimators": 50,
+                "max_depth": 4,
+                "class_weight": "balanced",
+                "random_state": 0,
+            },
+        }
+    }
+    unweighted = {
+        "RF-NonPondere": {
+            "algorithm": "random_forest",
+            "params": {"n_estimators": 50, "max_depth": 4, "random_state": 0},
+        }
+    }
+    set_models_config(ml_config_path, candidates=balanced)
+    run_training(str(ml_config_path))
+    served = Path(cfg["models"]["model_path"]).read_bytes()
+    # gain minimal negatif : la condition ROC-AUC est toujours remplie
+    set_models_config(
+        ml_config_path,
+        candidates=unweighted,
+        promotion={
+            "min_improvement": -1.0,
+            "max_recall_drop": 0.0,
+            "recall_floor": None,
+        },
+    )
+    out = run_training(str(ml_config_path))
+
+    d = out["decision"]
+    assert d["candidate_recall"] < d["current_recall"]  # precondition du scenario
+    assert d["promote"] is False and d["reason"] == "recall_regression"
+    assert stages_of(cfg) == {"1": "Production", "2": "Staging"}
+    assert Path(cfg["models"]["model_path"]).read_bytes() == served
+
+
+def test_corrupt_metadata_does_not_crash_training(ml_config_path: Path) -> None:
+    """F3 : metadata.json illisible -> pas de promotion, pas de plantage."""
+    cfg = load_config(ml_config_path)
+    run_training(str(ml_config_path))
+    meta_path = Path(cfg["models"]["metadata_path"])
+    meta_path.write_text("{ pas du json", encoding="utf-8")
+    served = Path(cfg["models"]["model_path"]).read_bytes()
+
+    out = run_training(str(ml_config_path))
+
+    assert out["decision"]["promote"] is False
+    assert out["decision"]["reason"].startswith("evaluation_failed")
+    assert out["metadata"] == {"version": "inconnue"}
+    assert meta_path.read_text(encoding="utf-8") == "{ pas du json"
+    assert Path(cfg["models"]["model_path"]).read_bytes() == served
+
+
+def test_refused_candidates_keep_single_staging(ml_config_path: Path) -> None:
+    """F6 : deux refus successifs -> l'ancien candidat Staging est archive."""
+    cfg = load_config(ml_config_path)
+    run_training(str(ml_config_path))
+    use_weak_candidate(ml_config_path)
+    run_training(str(ml_config_path))
+    run_training(str(ml_config_path))
+    assert stages_of(cfg) == {"1": "Production", "2": "Archived", "3": "Staging"}
+
+
+def test_missing_bundle_with_registry_production_blocks(ml_config_path: Path) -> None:
+    """F9 : bundle models/ supprime alors qu'une Production existe -> pas de promotion.
+
+    Scenario observe sans persist (DVC supprime les sorties avant l'etape) : un
+    candidat faible aurait ete promu faute de modele a comparer.
+    """
+    cfg = load_config(ml_config_path)
+    run_training(str(ml_config_path))
+    for key in ["model_path", "metadata_path", "scaler_path"]:
+        Path(cfg["models"][key]).unlink()
+    use_weak_candidate(ml_config_path)
+
+    out = run_training(str(ml_config_path))
+
+    assert out["decision"]["promote"] is False
+    assert out["decision"]["reason"] == "evaluation_failed: current_bundle_missing"
+    assert stages_of(cfg) == {"1": "Production", "2": "Staging"}
+    assert not Path(cfg["models"]["model_path"]).exists()

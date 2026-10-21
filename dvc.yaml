@@ -38,20 +38,32 @@ stages:
       - src/models/train.py
       - src/models/evaluate.py
       - src/models/registry.py
+      - src/models/promotion.py
+      - src/features/preprocess.py
+      - src/data/load_data.py
+      - data/raw/churn_reference.csv
       - data/processed/train.csv
       - data/processed/test.csv
       - data/processed/scaler_params.json
     params:
       - configs/config.yaml:
           - models
+          - features
+          - data.test_size
+          - data.random_state
           - mlflow.experiment_name
           - mlflow.registered_model_name
+    # persist : DVC ne supprime pas le modele en service avant l'etape ; si le
+    # candidat n'est pas promu, models/ reste inchange
     outs:
-      - models/model.joblib
+      - models/model.joblib:
+          persist: true
       - models/metadata.json:
           cache: false
+          persist: true
       - models/scaler_params.json:
           cache: false
+          persist: true
     metrics:
       - reports/metrics.json:
           cache: false

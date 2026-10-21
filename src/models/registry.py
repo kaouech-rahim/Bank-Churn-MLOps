@@ -20,8 +20,9 @@ def register_champion(
     description: str,
     alias: Optional[str] = "champion",
     client: Optional[MlflowClient] = None,
+    promote: bool = True,
 ) -> str:
-    """Enregistre le modele champion puis le promeut Staging -> Production.
+    """Enregistre le champion, le passe en Staging et, si promote, en Production.
 
     Args:
         model_uri: URI du modele logue (ex : runs:/<run_id>/model).
@@ -29,6 +30,7 @@ def register_champion(
         description: Description QA ajoutee a la version.
         alias: Alias a poser sur la version (None pour ne pas en poser).
         client: Client MLflow (cree automatiquement si absent).
+        promote: Si False, la version reste en Staging (tracee mais non servie).
 
     Returns:
         str: Numero de la version enregistree.
@@ -39,8 +41,14 @@ def register_champion(
     version = str(details.version)
 
     # 1. Staging : validation QA
-    client.transition_model_version_stage(model_name, version, stage="Staging")
+    # archive_existing_versions : une seule version a la fois en Staging
+    client.transition_model_version_stage(
+        model_name, version, stage="Staging", archive_existing_versions=True
+    )
     client.update_model_version(model_name, version, description=description)
+    if not promote:
+        print(f"[REGISTRY] '{model_name}' v{version} reste en STAGING (non promu).")
+        return version
 
     # 2. Production : les versions precedentes en production sont archivees
     client.transition_model_version_stage(
