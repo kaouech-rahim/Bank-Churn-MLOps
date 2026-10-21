@@ -1,0 +1,69 @@
+# ============================================================
+# Deploiement local Blue/Green + Prometheus
+#   - api_blue  : version active au depart        (http://localhost:8001)
+#   - api_green : version candidate               (http://localhost:8002)
+#   - nginx     : point d'entree unique du trafic (http://localhost:8000)
+#   - prometheus: collecte /metrics + alerte drift (http://localhost:9090)
+# Chaque couleur lit son propre dossier de modele (deploy/models/<couleur>).
+# La bascule est faite par : poetry run python scripts/switch_traffic.py
+# ============================================================
+services:
+  api_blue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bank-churn-api:latest
+    container_name: churn_api_blue
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./deploy/models/blue:/home/appuser/service/models:ro
+      - ./reports:/home/appuser/service/reports:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  api_green:
+    image: bank-churn-api:latest
+    container_name: churn_api_green
+    restart: unless-stopped
+    depends_on:
+      - api_blue          # garantit que l'image est construite par api_blue
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./deploy/models/green:/home/appuser/service/models:ro
+      - ./reports:/home/appuser/service/reports:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: churn_proxy
+    restart: unless-stopped
+    depends_on:
+      - api_blue
+      - api_green
+    ports:
+      - "8000:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/upstream.conf:/etc/nginx/upstream.conf:ro
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: churn_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
