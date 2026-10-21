@@ -1,8 +1,10 @@
 """Entrainement multi-modeles avec tracking MLflow et Model Registry (TP3).
 
 Etapes : train.csv / test.csv -> 6 runs MLflow (3 algorithmes x baseline/tuned)
--> choix du champion (meilleur ROC-AUC) -> Registry (Staging -> Production)
+-> choix du champion (meilleur ROC-AUC) -> comparaison au modele en service
+-> Registry (Staging, puis Production seulement si le champion est retenu)
 -> export models/model.joblib + metadata.json + scaler_params.json pour l'API.
+Un champion refuse reste en Staging : le modele servi par l'API ne change pas.
 """
 
 import argparse
@@ -24,13 +26,15 @@ from xgboost import XGBClassifier
 
 from src.config import load_config
 from src.data.load_data import load_raw_data
+from src.features.preprocess import clean_raw_dataframe, split_data
 from src.models.evaluate import (
     compute_metrics,
     predict_with_threshold,
     save_confusion_matrix,
     save_roc_curve,
 )
-from src.models.registry import register_champion
+from src.models.promotion import decide_promotion
+from src.models.registry import get_production_version, register_champion
 
 # Correspondance "nom dans la config" -> classe scikit-learn compatible
 ALGORITHMS = {
@@ -294,6 +298,26 @@ def export_champion(
     return metadata
 
 
+def reference_test_split(cfg: Dict[str, Any]) -> pd.DataFrame:
+    """Reconstitue les clients de test BRUTS (meme split que preprocess.py).
+
+    Args:
+        cfg: Configuration complete.
+
+    Returns:
+        pd.DataFrame: Clients de test nettoyes, cible incluse.
+    """
+    feats = cfg["features"]
+    target = feats["target_column"]
+    clean = clean_raw_dataframe(
+        load_raw_data(cfg["data"]["reference_path"]), feats["id_columns"], target
+    )
+    _, X_test, _, y_test = split_data(
+        clean, target, cfg["data"]["test_size"], cfg["data"]["random_state"]
+    )
+    return X_test.assign(**{target: y_test})
+
+
 def run_training(
     config_path: str = "configs/config.yaml", register: bool = True
 ) -> Dict[str, Any]:
@@ -301,10 +325,12 @@ def run_training(
 
     Args:
         config_path: Chemin vers le fichier YAML de configuration.
-        register: Si True, enregistre et promeut le champion dans le Registry.
+        register: Si True, enregistre le champion dans le Registry (promu en
+            Production seulement si decide_promotion l'autorise).
 
     Returns:
-        Dict[str, Any]: "results" (6 runs), "champion" et "metadata".
+        Dict[str, Any]: "results" (6 runs), "champion", "decision" (sortie de
+        decide_promotion), "version" enregistree et "metadata" du modele servi.
 
     Raises:
         FileNotFoundError: Si la configuration ou les donnees pretraitees manquent.
@@ -320,6 +346,22 @@ def run_training(
         f"\n[CHAMPION] {champion['run_name']} ({metric}={champion['metrics'][metric]})"
     )
 
+    # Comparaison au modele en service sur les memes 1 000 clients de test
+    # (bruts, pour qu'il soit encode avec SON scaler). Si le modele en service a
+    # deja vu ces clients (modele reentraine apres drift), son score est
+    # optimiste : le biais favorise le modele en place (choix prudent).
+    production_exists = (
+        register
+        and get_production_version(cfg["mlflow"]["registered_model_name"]) is not None
+    )
+    decision = decide_promotion(
+        champion["metrics"],
+        reference_test_split(cfg),
+        cfg,
+        production_exists=production_exists,
+    )
+    print(f"[PROMOTION] {decision}")
+
     version = None
     if register:
         version = register_champion(
@@ -327,16 +369,24 @@ def run_training(
             cfg["mlflow"]["registered_model_name"],
             description=(
                 f"Champion {champion['run_name']} choisi sur le {metric} "
-                f"({champion['metrics'][metric]}) : valide pour la recette QA."
+                f"({champion['metrics'][metric]}) - decision : {decision['reason']}."
             ),
             alias=cfg["mlflow"].get("champion_alias"),
+            promote=decision["promote"],
         )
 
     target = cfg["features"]["target_column"]
     feature_names = [c for c in train_df.columns if c != target]
-    metadata = export_champion(
-        champion, cfg, feature_names, cfg["data"]["scaler_path"], version
-    )
+    if decision["promote"]:
+        metadata = export_champion(
+            champion, cfg, feature_names, cfg["data"]["scaler_path"], version
+        )
+    else:  # le modele en service et son bundle restent inchanges
+        try:
+            with open(cfg["models"]["metadata_path"], "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+        except (OSError, ValueError):  # bundle illisible : on n'y touche pas
+            metadata = {"version": "inconnue"}
 
     metrics_path = Path(cfg["models"]["metrics_path"])
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
@@ -352,8 +402,14 @@ def run_training(
         )
         f.write("\n")
 
-    print(f"[EXPORT] {cfg['models']['model_path']} (version {metadata['version']})")
-    return {"results": results, "champion": champion, "metadata": metadata}
+    print(f"[EXPORT] modele servi : version {metadata['version']}")
+    return {
+        "results": results,
+        "champion": champion,
+        "metadata": metadata,
+        "decision": decision,
+        "version": version,
+    }
 
 
 if __name__ == "__main__":
