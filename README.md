@@ -182,7 +182,9 @@ poetry run mypy src pipelines scripts
 | Niveau de risque API | Faible < 0,35 ≤ Modéré < 0,70 ≤ Élevé |
 | Variable en drift | test KS/χ² significatif (p < 0,05) **et** PSI ≥ 0,10 |
 | Drift critique | ≥ 30 % des 8 variables surveillées (3 variables ou plus) |
-| Promotion après réentraînement | ROC-AUC nouveau ≥ ROC-AUC actuel + 0,0, mesurés sur un hold-out de production jamais vu par les deux modèles |
+| Promotion d'un nouveau champion | comparé au modèle en service sur les mêmes clients : promu seulement si ROC-AUC ≥ ROC-AUC actuel + `min_improvement` (0,0) **et** rappel au seuil 0,5 ≥ rappel actuel − `max_recall_drop` (0,0) |
+| Refus de promotion | métrique absente ou non finie, modèle en service illisible, ou bundle `models/` manquant alors qu'une version est en Production : `models/` n'est pas modifié ; la nouvelle version reste en Staging (entraînement planifié) ou n'est pas ajoutée au Registry, mais ses runs et artefacts MLflow sont conservés (après drift) |
+| Clients de comparaison | entraînement planifié : 1 000 clients de test de la référence ; après drift : hold-out de production jamais vu par les deux modèles |
 
 ---
 

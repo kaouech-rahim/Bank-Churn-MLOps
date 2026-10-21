@@ -7,8 +7,10 @@
    (lu par Prometheus) + dashboard HTML Evidently.
 3. Si drift critique (drift_share >= 0.30) : reentrainement sur reference + "fit".
 4. Comparaison equitable sur le "holdout" (donnees de production jamais vues par
-   l'ancien NI par le nouveau modele). Promotion SEULEMENT si
-   ROC-AUC nouveau >= ROC-AUC actuel + min_improvement ; sinon on garde l'ancien.
+   l'ancien NI par le nouveau modele), avec la regle commune de
+   src/models/promotion.py : ROC-AUC au moins aussi bon ET rappel non degrade.
+   Au moindre doute (modele en service illisible, metrique invalide), on garde
+   l'ancien modele.
 
 Limite assumee sur les labels : on ne fabrique aucun label. Le pool contient les
 vrais labels (Exited) historiques ; apres injection artificielle du drift, ces
@@ -22,11 +24,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-import joblib
 import pandas as pd
 from prefect import flow, get_run_logger, task
 from prefect.cache_policies import NO_CACHE
-from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
 from pipelines.training_flow import (
@@ -40,28 +40,11 @@ from pipelines.training_flow import (
     validate_data,
 )
 from src.config import load_config
-from src.features.preprocess import encode_features
+from src.models.promotion import decide_promotion
+from src.models.registry import get_production_version
 from src.monitoring.dashboard import build_drift_report
 from src.monitoring.drift import detect_drift
 from src.monitoring.drift_simulator import DriftSimulator
-
-
-def should_promote(
-    new_score: float, current_score: Optional[float], min_improvement: float = 0.0
-) -> bool:
-    """Regle de promotion : le nouveau modele doit faire au moins aussi bien.
-
-    Args:
-        new_score: ROC-AUC du nouveau champion (sur le holdout).
-        current_score: ROC-AUC du modele en service (None s'il n'y en a pas).
-        min_improvement: Gain minimal exige (0.0 = meilleur ou egal).
-
-    Returns:
-        bool: True si le nouveau modele doit etre promu.
-    """
-    if current_score is None:
-        return True
-    return new_score >= current_score + min_improvement
 
 
 @task(name="lot-de-production", cache_policy=NO_CACHE)
@@ -127,49 +110,19 @@ def write_reports(
     return {"json": str(json_path), "html": str(html_path)}
 
 
-def score_current_model(
-    holdout_clean: pd.DataFrame, cfg: Dict[str, Any]
-) -> Optional[float]:
-    """ROC-AUC du modele en service sur le holdout (None s'il n'y a pas de modele).
-
-    Le modele actuel est evalue avec SON scaler et SON ordre de colonnes.
-
-    Args:
-        holdout_clean: Clients du holdout nettoyes, avec la cible.
-        cfg: Configuration complete.
-
-    Returns:
-        Optional[float]: ROC-AUC arrondi a 4 decimales, ou None.
-    """
-    models_cfg = cfg["models"]
-    paths = [models_cfg[k] for k in ["model_path", "metadata_path", "scaler_path"]]
-    if not all(Path(p).exists() for p in paths):
-        return None
-    model = joblib.load(paths[0])
-    with open(paths[1], "r", encoding="utf-8") as f:
-        feature_order = json.load(f)["features"]["model_input"]
-    with open(paths[2], "r", encoding="utf-8") as f:
-        scaler = json.load(f)
-
-    feats = cfg["features"]
-    target = feats["target_column"]
-    X = encode_features(
-        holdout_clean.drop(columns=[target]),
-        feats["binary_mapping"],
-        feats["category_values"],
-        feats["numerical_columns"],
-        scaler,
-    )[feature_order]
-    proba = model.predict_proba(X)[:, 1]
-    return round(float(roc_auc_score(holdout_clean[target], proba)), 4)
-
-
 @task(name="score-modele-actuel", cache_policy=NO_CACHE)
 def evaluate_current_model(
-    holdout_clean: pd.DataFrame, cfg: Dict[str, Any]
-) -> Optional[float]:
-    """Tache Prefect autour de score_current_model."""
-    return score_current_model(holdout_clean, cfg)
+    new_metrics: Dict[str, Any], holdout_clean: pd.DataFrame, cfg: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Compare le nouveau champion au modele en service (echec -> pas de promotion)."""
+    production = get_production_version(cfg["mlflow"]["registered_model_name"])
+    return decide_promotion(
+        new_metrics,
+        holdout_clean,
+        cfg,
+        cfg["prefect"]["min_improvement"],
+        production_exists=production is not None,
+    )
 
 
 @task(name="pretraitement-reentrainement", cache_policy=NO_CACHE)
@@ -211,13 +164,11 @@ def retrain_and_compare(
     results = train_models(train_df, test_df, cfg, "prefect-retraining")
     champion = evaluate_models(results, cfg)
     new_score = champion["metrics"]["roc_auc"]
-    current_score = evaluate_current_model(holdout_clean, cfg)
-    promote = should_promote(
-        new_score, current_score, cfg["prefect"]["min_improvement"]
-    )
+    decision = evaluate_current_model(champion["metrics"], holdout_clean, cfg)
+    current_score, promote = decision["current_score"], decision["promote"]
     logger.info(
         f"ROC-AUC holdout : nouveau={new_score} / actuel={current_score} "
-        f"-> promotion={promote}"
+        f"-> promotion={promote} ({decision['reason']})"
     )
 
     version = None
@@ -233,6 +184,7 @@ def retrain_and_compare(
         "new_roc_auc": new_score,
         "current_roc_auc": current_score,
         "promoted": promote,
+        "reason": decision["reason"],
         "version": version,
         "n_training_rows": len(train_df),
         "n_holdout_rows": len(test_df),

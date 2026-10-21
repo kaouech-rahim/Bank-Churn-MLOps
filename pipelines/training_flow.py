@@ -1,5 +1,6 @@
 """Flow Prefect d'entrainement : ingestion -> validation -> pretraitement
--> entrainement -> evaluation -> Registry -> export.
+-> entrainement -> evaluation -> comparaison au modele en service -> Registry
+-> export (seulement si le champion est promu).
 
 Chaque etape est une @task atomique et testable. Les taches d'entree/sortie
 (lecture des donnees, Registry) ont des retries (nombre et delai dans la config).
@@ -25,7 +26,8 @@ from src.features.preprocess import (
     split_data,
     validate_schema,
 )
-from src.models.registry import register_champion
+from src.models.promotion import decide_promotion
+from src.models.registry import get_production_version, register_champion
 from src.models.train import export_champion, select_champion, train_candidates
 
 
@@ -92,7 +94,7 @@ def encode_train_test(
 
 def preprocess_frames(
     clean: pd.DataFrame, cfg: Dict[str, Any], work_dir: Path
-) -> Tuple[pd.DataFrame, pd.DataFrame, Path]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, Path, pd.DataFrame]:
     """Split train/test stratifie puis encodage (meme logique que preprocess.py).
 
     Args:
@@ -101,24 +103,23 @@ def preprocess_frames(
         work_dir: Dossier de travail ou ecrire scaler_params.json.
 
     Returns:
-        Tuple: (train encode, test encode, chemin du scaler).
+        Tuple: (train encode, test encode, chemin du scaler, test BRUT avec cible).
     """
     target = cfg["features"]["target_column"]
     X_train, X_test, y_train, y_test = split_data(
         clean, target, cfg["data"]["test_size"], cfg["data"]["random_state"]
     )
-    return encode_train_test(
-        X_train.assign(**{target: y_train}),
-        X_test.assign(**{target: y_test}),
-        cfg,
-        work_dir,
+    raw_test = X_test.assign(**{target: y_test})
+    train_df, test_df, scaler_path = encode_train_test(
+        X_train.assign(**{target: y_train}), raw_test, cfg, work_dir
     )
+    return train_df, test_df, scaler_path, raw_test
 
 
 @task(name="pretraitement", cache_policy=NO_CACHE)
 def preprocess_data(
     clean: pd.DataFrame, cfg: Dict[str, Any], work_dir: str
-) -> Tuple[pd.DataFrame, pd.DataFrame, Path]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, Path, pd.DataFrame]:
     """Tache Prefect autour de preprocess_frames."""
     return preprocess_frames(clean, cfg, Path(work_dir))
 
@@ -140,17 +141,31 @@ def evaluate_models(
 
 
 @task(name="enregistrement-registry", cache_policy=NO_CACHE)
-def register_model(champion: Dict[str, Any], cfg: Dict[str, Any], reason: str) -> str:
-    """Enregistre le champion et le promeut en Production."""
+def register_model(
+    champion: Dict[str, Any], cfg: Dict[str, Any], reason: str, promote: bool = True
+) -> str:
+    """Enregistre le champion (Staging) et le promeut en Production si promote."""
     metric = cfg["models"]["champion_metric"]
     return register_champion(
         champion["model_uri"],
         cfg["mlflow"]["registered_model_name"],
         description=(
             f"{champion['run_name']} ({metric}={champion['metrics'][metric]}) - "
-            f"{reason} - valide pour la recette QA."
+            f"{reason} - decision de recette QA."
         ),
         alias=cfg["mlflow"].get("champion_alias"),
+        promote=promote,
+    )
+
+
+@task(name="comparaison-modele-actuel", cache_policy=NO_CACHE)
+def compare_with_current(
+    champion: Dict[str, Any], raw_test: pd.DataFrame, cfg: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Compare le candidat au modele en service sur les memes clients de test."""
+    production = get_production_version(cfg["mlflow"]["registered_model_name"])
+    return decide_promotion(
+        champion["metrics"], raw_test, cfg, production_exists=production is not None
     )
 
 
@@ -183,21 +198,30 @@ def training_flow(config_path: str = "configs/config.yaml") -> Dict[str, Any]:
 
     raw = ingest_data.with_options(**opts)(cfg["data"]["reference_path"])
     clean = validate_data(raw, cfg)
-    train_df, test_df, scaler_path = preprocess_data(clean, cfg, work_dir)
+    train_df, test_df, scaler_path, raw_test = preprocess_data(clean, cfg, work_dir)
     results = train_models(train_df, test_df, cfg, "prefect-training")
     champion = evaluate_models(results, cfg)
+    decision = compare_with_current(champion, raw_test, cfg)
     version = register_model.with_options(**opts)(
-        champion, cfg, "entrainement planifie"
+        champion,
+        cfg,
+        f"entrainement planifie ({decision['reason']})",
+        decision["promote"],
     )
-    target = cfg["features"]["target_column"]
-    features = [c for c in train_df.columns if c != target]
-    export_model(champion, cfg, features, str(scaler_path), version)
+    if decision["promote"]:
+        target = cfg["features"]["target_column"]
+        features = [c for c in train_df.columns if c != target]
+        export_model(champion, cfg, features, str(scaler_path), version)
 
-    logger.info(f"Champion {champion['run_name']} enregistre en version {version}")
+    logger.info(
+        f"Champion {champion['run_name']} enregistre en version {version} - "
+        f"decision : {decision}"
+    )
     return {
         "champion": champion["run_name"],
         "version": version,
         "metrics": champion["metrics"],
+        "decision": decision,
     }
 
 
