@@ -30,3 +30,28 @@ stages:
       - data/processed/train.csv
       - data/processed/test.csv
       - data/processed/scaler_params.json
+
+  # Etape 3 : 6 runs MLflow, champion (meilleur ROC-AUC) -> Registry -> export API
+  train:
+    cmd: poetry run python -m src.models.train --config configs/config.yaml
+    deps:
+      - src/models/train.py
+      - src/models/evaluate.py
+      - src/models/registry.py
+      - data/processed/train.csv
+      - data/processed/test.csv
+      - data/processed/scaler_params.json
+    params:
+      - configs/config.yaml:
+          - models
+          - mlflow.experiment_name
+          - mlflow.registered_model_name
+    outs:
+      - models/model.joblib
+      - models/metadata.json:
+          cache: false
+      - models/scaler_params.json:
+          cache: false
+    metrics:
+      - reports/metrics.json:
+          cache: false

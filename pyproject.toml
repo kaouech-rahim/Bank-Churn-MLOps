@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<4.0"
+python = ">=3.11,<3.14"
 pandas = "^2.2.0"
 numpy = "^1.26.0"
 scikit-learn = "^1.4.0"
@@ -15,6 +15,17 @@ scipy = "^1.13.0"
 pyyaml = "^6.0.1"
 dvc = {extras = ["s3"], version = "^3.67.1"}
 evidently = "^0.7.23"
+mlflow = "^3.17.2"
+xgboost = ">=3.2,<3.3"
+fastapi = ">=0.139,<0.151"
+matplotlib = "^3.11.2"
+prometheus-client = "^0.26.0"
+prefect = "^3.9.0"
+joblib = "^1.6.0"
+uvicorn = "^0.54.0"
+# asyncpg (dependance du serveur Prefect) epingle en 0.30.0 : la DLL de la 0.32.0
+# est bloquee par Windows Smart App Control sur nos postes (voir README).
+asyncpg = "0.30.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
@@ -23,6 +34,9 @@ black = "^24.2.0"
 isort = "^5.13.2"
 flake8 = "^7.0.0"
 pre-commit = "^3.6.0"
+mypy = "^2.4.0"
+types-pyyaml = "^6.0.12.20260906"
+httpx = "^0.28.1"
 
 [build-system]
 requires = ["poetry-core"]
@@ -30,8 +44,25 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.black]
 line-length = 88
-target-version = ['py310']
+target-version = ['py311']
 
 [tool.isort]
 profile = "black"
 line_length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+filterwarnings = [
+    # Avertissements de depreciation des bibliotheques tierces (MLflow, Prefect...)
+    "ignore::DeprecationWarning",
+    "ignore::FutureWarning",
+]
+
+[tool.coverage.run]
+source = ["src", "pipelines"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true

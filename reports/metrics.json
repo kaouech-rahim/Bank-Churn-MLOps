@@ -1,0 +1,48 @@
+{
+  "champion": "RandomForest-Tuned",
+  "champion_metric": "roc_auc",
+  "runs": {
+    "LogReg-Baseline": {
+      "accuracy": 0.804,
+      "precision": 0.5556,
+      "recall": 0.1961,
+      "f1": 0.2899,
+      "roc_auc": 0.7577
+    },
+    "LogReg-Tuned": {
+      "accuracy": 0.703,
+      "precision": 0.3786,
+      "recall": 0.7108,
+      "f1": 0.494,
+      "roc_auc": 0.7595
+    },
+    "RandomForest-Baseline": {
+      "accuracy": 0.864,
+      "precision": 0.8333,
+      "recall": 0.4167,
+      "f1": 0.5556,
+      "roc_auc": 0.8537
+    },
+    "RandomForest-Tuned": {
+      "accuracy": 0.836,
+      "precision": 0.582,
+      "recall": 0.6961,
+      "f1": 0.6339,
+      "roc_auc": 0.868
+    },
+    "XGBoost-Baseline": {
+      "accuracy": 0.869,
+      "precision": 0.7829,
+      "recall": 0.4951,
+      "f1": 0.6066,
+      "roc_auc": 0.8648
+    },
+    "XGBoost-Tuned": {
+      "accuracy": 0.828,
+      "precision": 0.5645,
+      "recall": 0.6863,
+      "f1": 0.6195,
+      "roc_auc": 0.8596
+    }
+  }
+}
