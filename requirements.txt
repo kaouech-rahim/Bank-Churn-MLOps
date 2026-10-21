@@ -1,0 +1,15 @@
+# Dependances d'EXECUTION de l'API (image Docker python:3.11-slim).
+# Versions alignees sur poetry.lock. L'environnement de developpement complet
+# (MLflow, Prefect, DVC, Evidently, tests) s'installe avec : poetry install
+fastapi==0.150.0
+uvicorn==0.54.0
+pydantic==2.14.1
+pandas==2.3.3
+numpy==1.26.4
+scikit-learn==1.9.1
+# xgboost-cpu : meme module "xgboost" que le paquet standard, sans les
+# bibliotheques NVIDIA CUDA (plusieurs centaines de Mo inutiles ici)
+xgboost-cpu==3.2.0
+joblib==1.6.0
+pyyaml==6.0.3
+prometheus-client==0.26.0
