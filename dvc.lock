@@ -113,3 +113,100 @@ stages:
       hash: md5
       md5: b307ec34ea45b3e1549f066886907b5d
       size: 345782
+  train:
+    cmd: poetry run python -m src.models.train --config configs/config.yaml
+    deps:
+    - path: data/processed/scaler_params.json
+      hash: md5
+      md5: 0ce72df24811255e05c44103360f44f3
+      size: 367
+    - path: data/processed/test.csv
+      hash: md5
+      md5: 9db925961c2ad104093e3c94818e3f70
+      size: 86857
+    - path: data/processed/train.csv
+      hash: md5
+      md5: b307ec34ea45b3e1549f066886907b5d
+      size: 345782
+    - path: src/models/evaluate.py
+      hash: md5
+      md5: 03e4a5a980d0fcd98cedc00d818ba019
+      size: 3594
+    - path: src/models/registry.py
+      hash: md5
+      md5: c04f7e4090c1e941e467493c643ff187
+      size: 3176
+    - path: src/models/train.py
+      hash: md5
+      md5: 006b72ced9fea0957a875cd6819a3d3a
+      size: 13346
+    params:
+      configs/config.yaml:
+        mlflow.experiment_name: Bank-Churn
+        mlflow.registered_model_name: BankChurnModel
+        models:
+          champion_metric: roc_auc
+          decision_threshold: 0.5
+          model_path: models/model.joblib
+          metadata_path: models/metadata.json
+          scaler_path: models/scaler_params.json
+          metrics_path: reports/metrics.json
+          candidates:
+            LogReg-Baseline:
+              algorithm: logistic_regression
+              params:
+                max_iter: 1000
+            LogReg-Tuned:
+              algorithm: logistic_regression
+              params:
+                max_iter: 1000
+                C: 0.5
+                class_weight: balanced
+            RandomForest-Baseline:
+              algorithm: random_forest
+              params:
+                n_estimators: 100
+                max_depth: 6
+                random_state: 42
+            RandomForest-Tuned:
+              algorithm: random_forest
+              params:
+                n_estimators: 300
+                max_depth: 10
+                min_samples_leaf: 5
+                class_weight: balanced
+                random_state: 42
+            XGBoost-Baseline:
+              algorithm: xgboost
+              params:
+                n_estimators: 200
+                max_depth: 4
+                learning_rate: 0.1
+                random_state: 42
+            XGBoost-Tuned:
+              algorithm: xgboost
+              params:
+                n_estimators: 400
+                max_depth: 4
+                learning_rate: 0.05
+                subsample: 0.8
+                colsample_bytree: 0.8
+                scale_pos_weight: 3.9
+                random_state: 42
+    outs:
+    - path: models/metadata.json
+      hash: md5
+      md5: bb21d7012a125606bf6fd0c36dfdd136
+      size: 1052
+    - path: models/model.joblib
+      hash: md5
+      md5: 51adc96a2e80b02bc3667253b7b2740f
+      size: 8987657
+    - path: models/scaler_params.json
+      hash: md5
+      md5: 0ce72df24811255e05c44103360f44f3
+      size: 367
+    - path: reports/metrics.json
+      hash: md5
+      md5: 02519f6ae460db4ae1c4020b21bb136a
+      size: 1049

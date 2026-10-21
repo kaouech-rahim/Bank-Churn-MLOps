@@ -1,0 +1,50 @@
+{
+  "model_name": "BankChurnModel",
+  "version": "5",
+  "run_name": "RandomForest-Tuned",
+  "run_id": "b706a81d67964079ba564e04285fc599",
+  "algorithm": "RandomForestClassifier",
+  "params": {
+    "n_estimators": 300,
+    "max_depth": 10,
+    "min_samples_leaf": 5,
+    "class_weight": "balanced",
+    "random_state": 42
+  },
+  "metrics": {
+    "accuracy": 0.836,
+    "precision": 0.582,
+    "recall": 0.6961,
+    "f1": 0.6339,
+    "roc_auc": 0.868
+  },
+  "decision_threshold": 0.5,
+  "features": {
+    "numeric": [
+      "CreditScore",
+      "Age",
+      "Tenure",
+      "Balance",
+      "NumOfProducts",
+      "EstimatedSalary"
+    ],
+    "categorical": [
+      "Gender",
+      "Geography"
+    ],
+    "model_input": [
+      "CreditScore",
+      "Gender",
+      "Age",
+      "Tenure",
+      "Balance",
+      "NumOfProducts",
+      "HasCrCard",
+      "IsActiveMember",
+      "EstimatedSalary",
+      "Geography_Germany",
+      "Geography_Spain"
+    ]
+  },
+  "trained_at": "2026-10-21T09:52:23+00:00"
+}
