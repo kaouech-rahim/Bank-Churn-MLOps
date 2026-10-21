@@ -1,0 +1,26 @@
+{
+  "CreditScore": {
+    "min": 350.0,
+    "max": 850.0
+  },
+  "Age": {
+    "min": 18.0,
+    "max": 92.0
+  },
+  "Tenure": {
+    "min": 0.0,
+    "max": 10.0
+  },
+  "Balance": {
+    "min": 0.0,
+    "max": 222267.63
+  },
+  "NumOfProducts": {
+    "min": 1.0,
+    "max": 4.0
+  },
+  "EstimatedSalary": {
+    "min": 90.07,
+    "max": 199992.48
+  }
+}
