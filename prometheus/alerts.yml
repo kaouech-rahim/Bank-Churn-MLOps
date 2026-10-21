@@ -1,0 +1,26 @@
+# Regles d'alerte : visibles dans http://localhost:9090/alerts
+groups:
+  - name: churn-model
+    rules:
+      - alert: DataDriftCritical
+        expr: max(churn_drift_critical) == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Drift critique detecte sur les donnees de production"
+          description: "churn_drift_critical vaut 1 (drift_share >= 0.30) : lancer le flow de reentrainement Prefect."
+      - alert: ChurnApiDown
+        expr: up{job="churn-api"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Une instance de l'API churn ne repond plus ({{ $labels.instance }})"
+      - alert: SlowInference
+        expr: histogram_quantile(0.95, sum(rate(churn_prediction_latency_seconds_bucket[5m])) by (le)) > 0.15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latence p95 d'inference superieure a 150 ms"
