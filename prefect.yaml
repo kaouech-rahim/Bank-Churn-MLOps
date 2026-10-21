@@ -1,0 +1,36 @@
+# ============================================================
+# Deploiements Prefect 3.x (declaratif) : prefect deploy --all
+# Work pool "churn-pool" de type process : le worker execute les flows en local
+# dans le dossier du projet (memes donnees, meme mlflow.db).
+# ============================================================
+name: bank-churn-mlops
+prefect-version: 3.9.0
+
+# Le worker tourne dans le dossier du projet : pas de clone ni de build
+pull:
+  - prefect.deployments.steps.set_working_directory:
+      directory: "{{ $PROJECT_DIR }}"
+
+deployments:
+  - name: training-weekly
+    description: "Entrainement des 6 candidats, champion -> Registry -> export API"
+    entrypoint: pipelines/training_flow.py:training_flow
+    parameters:
+      config_path: configs/config.yaml
+    work_pool:
+      name: churn-pool
+    schedules:
+      - cron: "0 3 * * 1"        # chaque lundi a 03:00 (= prefect.training_cron)
+        timezone: "Europe/Paris"
+
+  - name: drift-daily
+    description: "Controle du drift, rapports, reentrainement si drift critique"
+    entrypoint: pipelines/drift_flow.py:drift_flow
+    parameters:
+      config_path: configs/config.yaml
+      scenario: strong
+    work_pool:
+      name: churn-pool
+    schedules:
+      - cron: "0 6 * * *"        # chaque jour a 06:00 (= prefect.drift_cron)
+        timezone: "Europe/Paris"
