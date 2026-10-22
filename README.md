@@ -85,7 +85,7 @@ pipelines                  flows Prefect (entraînement, drift + réentraînemen
 scripts                    rapport CML, bascule Blue/Green, trafic de démonstration
 deploy, prometheus         Nginx, modèles par couleur, configuration Prometheus
 tests                      178 tests pytest (données synthétiques, sans réseau)
-docs                       rapport, démo, soutenance, checklist
+docs                       rapport (Markdown + PDF), figures, captures
 ```
 
 ---
@@ -204,7 +204,7 @@ poetry run mypy src pipelines scripts
 ## 6. Résultats et limites
 
 Les 6 runs, la boucle de drift et la latence ont été exécutés sur les vraies données :
-voir [docs/RAPPORT.md](docs/RAPPORT.md) et la checklist [docs/CHECKLIST.md](docs/CHECKLIST.md).
+voir le rapport [docs/RAPPORT.md](docs/RAPPORT.md) et sa version PDF [docs/RAPPORT.pdf](docs/RAPPORT.pdf).
 
 **Versions du modèle.** V1, V2, V4 et V5 sont le même modèle `RandomForest-Tuned`
 (contrôle local du 21/10/2026). V3 (XGBoost réentraîné après un drift simulé) a été promue le
