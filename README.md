@@ -5,8 +5,10 @@
 ![Coverage](https://img.shields.io/badge/couverture-%E2%89%A575%25-brightgreen)
 
 Projet de fin de module « MLOps & Industrialisation de l'IA » — trinôme :
-**Amir Rjeb** (données, DVC, drift), **AbdRahim Kaouech** (modèles, MLflow, Prefect),
-**Fatma Ayadi** (API, Docker, CI/CD, Prometheus).
+**Amir Rjeb**, **AbdRahim Kaouech**, **Fatma Ayadi**. Rôles prévus dans le
+[SYNOPSIS](SYNOPSIS.md) : lead données et DVC, lead modélisation et MLflow, lead serving et
+CI/CD, observabilité partagée ; l'activité observable dans l'historique GitHub est résumée au
+§10 du [rapport](docs/RAPPORT.md) (à confirmer par les trois membres).
 
 
 ---
@@ -19,13 +21,24 @@ part) à partir de 10 variables (score de crédit, pays, âge, solde, produits�
 
 | | |
 |---|---|
-| Données | `churn.csv` (Kaggle), 10 000 clients, 20,4 % de churn |
+| Données | `churn.csv` (Kaggle), 10 000 clients, 20,37 % de churn |
 | Consigne du professeur | 5 000 lignes pour l'entraînement (`churn_reference.csv`), 5 000 lignes pour simuler la production et le drift (`churn_production_pool.csv`) |
-| KPI (SYNOPSIS) | F1 ≥ 0,60 · ROC-AUC ≥ 0,85 · rappel ≥ 0,70 · latence < 150 ms |
+| Objectifs ML (SYNOPSIS) | F1 ≥ 0,60 · ROC-AUC ≥ 0,85 · rappel ≥ 0,70 · latence < 150 ms |
+| KPI métier (SYNOPSIS) | précision ≥ 0,50 (suivie dans le rapport ; ce n'est pas un critère de la règle de promotion) |
 
 **Résultats obtenus** (jeu de test de 1 000 clients, seuil 0,5) — champion
-`RandomForest-Tuned` : ROC-AUC **0,868**, F1 **0,634**, précision 0,582,
-rappel **0,696** (juste sous l'objectif de 0,70), latence p95 **47 ms** (mesure locale).
+`RandomForest-Tuned`, **version 5 en Production, alias `champion`** : ROC-AUC **0,868**,
+F1 **0,634**, précision **0,582**, rappel **0,696** (juste sous l'objectif de 0,70).
+
+**Latence** (mesures locales, non représentatives d'un réseau réel) : p95 **42,1 ms** selon le
+fichier de mesure conservé du 21/10/2026 (200 requêtes après 10 de chauffe, modèle v5) ; une
+mesure antérieure, sans fichier de mesure conservé, indiquait p95 47,2 ms. Ces deux valeurs
+proviennent de contrôles différents et leur comparabilité n'est pas établie.
+
+**Tests** : 178 tests réussis et couverture de 95,80 % (`src` + `pipelines`) en local sur le
+commit `07e83c6` (PR #11) ; la CI GitHub est verte sur `main` (`eb8ee7a`), mais la couverture
+affichée par la CI n'a pas été vérifiée.
+
 Détails : [docs/RAPPORT.md](docs/RAPPORT.md). Guide détaillé des données et du remote DVC : [docs/GUIDE_DONNEES_DVC.md](docs/GUIDE_DONNEES_DVC.md).
 
 ---
@@ -46,7 +59,7 @@ flowchart LR
     J --> K[rapport JSON + HTML Evidently]
     K --> I
     J -- drift critique --> L[reentrainement<br/>comparaison holdout]
-    L -- meilleur ou egal --> E
+    L -- ROC-AUC et rappel<br/>non degrades --> E
     M[GitHub Actions<br/>lint + pytest + CML] -.-> G
 ```
 
@@ -71,7 +84,7 @@ src/monitoring             drift (KS/chi2/PSI), simulateur, dashboard, métrique
 pipelines                  flows Prefect (entraînement, drift + réentraînement)
 scripts                    rapport CML, bascule Blue/Green, trafic de démonstration
 deploy, prometheus         Nginx, modèles par couleur, configuration Prometheus
-tests                      154 tests pytest (données synthétiques, sans réseau)
+tests                      178 tests pytest (données synthétiques, sans réseau)
 docs                       rapport, démo, soutenance, checklist
 ```
 
@@ -193,13 +206,29 @@ poetry run mypy src pipelines scripts
 Les 6 runs, la boucle de drift et la latence ont été exécutés sur les vraies données :
 voir [docs/RAPPORT.md](docs/RAPPORT.md) et la checklist [docs/CHECKLIST.md](docs/CHECKLIST.md).
 
+**Versions du modèle.** V1, V2, V4 et V5 sont le même modèle `RandomForest-Tuned`
+(contrôle local du 21/10/2026). V3 (XGBoost réentraîné après un drift simulé) a été promue le
+21/10 avec l'ancienne règle (ROC-AUC seul), puis archivée ; avec la règle actuelle de la PR #11,
+elle ne serait pas promue face à V5 : sur 3 000 clients jamais vus (contrôle local du 21/10), même
+ROC-AUC (0,8621 contre 0,8623) mais rappel 0,455 contre 0,712. V3 a en revanche une meilleure
+précision (0,798 contre 0,548). **V5 reste en Production avec l'alias `champion`.** Les métriques
+enregistrées de V3 proviennent d'un autre jeu (400 lignes après drift) et ne sont pas
+directement comparables à celles de V1, V2, V4 et V5. Détails : §4 et §5 du rapport.
+
+**Prefect.** Les déploiements `training-weekly` et `drift-daily` étaient en pause au dernier
+contrôle (22/10/2026). Avec `min_improvement = 0.0`, un réentraînement identique à V5 serait
+promu comme nouvelle version : les réactiver est une décision à prendre.
+
 Limites connues :
 - rappel du champion 0,696 < 0,70 au seuil 0,5 ; baisser le seuil se règlerait sur un jeu
   de validation dédié (non fait pour ne pas optimiser sur le jeu de test) ;
 - le drift est **simulé** ; les labels du pool sont réels mais conservés après la
   transformation artificielle des variables (approximation de simulation) ;
-- Docker, Nginx Blue/Green et Prometheus ont été exécutés (bascule v3 → v4 sans erreur sur
-  496 requêtes) ; la CI et le rapport CML ont tourné avec succès sur la PR #7.
+- la règle de promotion ne tient compte ni de la précision (`precision_floor` non
+  implémenté) ni de la calibration des probabilités ;
+- Docker, Nginx Blue/Green et Prometheus ont été exécutés lors de la démonstration du 21/10
+  (bascule v3 → v4 sans erreur sur 496 requêtes) ; la CI et le rapport CML ont tourné avec
+  succès sur les PR, dont la PR #11.
 
 ---
 

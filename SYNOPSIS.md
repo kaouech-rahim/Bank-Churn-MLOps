@@ -86,5 +86,24 @@ implémentés diffèrent sur les points suivants :
 |---|---|---|
 | Seuil d'alerte « PSI ≥ 0,20 sur une variable clé ou ≥ 30 % de variables en dérive » | Variable en drift si test KS/χ² significatif (p < 0,05) **et** PSI ≥ 0,10 ; alerte critique si ≥ 30 % des 8 variables dérivent | Double critère : évite les fausses alertes des tests sur de gros échantillons |
 | Injection du drift par « permutation » de `Geography` | Ré-échantillonnage pondéré (Allemagne à ≈ 50 %), âge + 8 ans, soldes × 1,3 | `DriftSimulator`, paramètres dans `configs/config.yaml` |
-| KPI rappel ≥ 0,70 | Rappel obtenu 0,696 au seuil 0,5 (F1 0,634, ROC-AUC 0,868) | KPI non modifié ; écart documenté dans le rapport |
+| KPI rappel ≥ 0,70 et précision ≥ 0,50 | Rappel obtenu 0,696 au seuil 0,5, précision 0,582 (F1 0,634, ROC-AUC 0,868) | KPI non modifié ; écart sur le rappel documenté dans le rapport |
 | Remote DVC local | Remote à harmoniser (voir README §7) | Le chemin versionné n'existe que sur un poste |
+| Étapes DVC « ingestion, preprocessing, train, evaluate » | Trois étapes : `split`, `preprocess`, `train` (l'évaluation et la comparaison au modèle en service sont faites dans `train`) | Une étape de moins à maintenir, mêmes contrôles |
+| MLflow « Tracking Server local » | Backend SQLite (`mlflow.db`) et `./mlruns` ; serveur MLflow local lancé à la demande (README §4) ; les scripts écrivent directement dans la base | Aucun serveur permanent nécessaire |
+| Comportement autonome : « alerte Prometheus, appel automatique du Flow de réentraînement, mise à jour du Registry et bascule Blue/Green si meilleur » | Le flow `drift_flow` détecte le drift et lance lui-même le réentraînement ; l'alerte Prometheus `DataDriftCritical` informe sans rien déclencher ; le nouveau modèle n'est promu que s'il fait au moins aussi bien que le modèle en service (ROC-AUC, rappel non dégradé) ; la bascule Blue/Green reste manuelle (`scripts/switch_traffic.py`) | Règle de promotion corrigée par la PR #11 ; bascule gardée sous contrôle humain |
+| Jalon final : tag `v1.0-release` | Le tag pointe sur `f8241d6` ; la version de référence pour la remise est `main` au commit `eb8ee7a` (PR #11) | La correction de la promotion est postérieure au tag |
+
+Rôles : la répartition prévue au §1 est conservée telle quelle ; l'activité vérifiable dans
+l'historique GitHub est résumée au §10 du rapport (`docs/RAPPORT.md`).
+
+**Versions du modèle et règle de promotion (synthèse).** V5 (RandomForest-Tuned) reste le
+champion : en Production, alias `champion`. V1, V2, V4 et V5 sont le même modèle, évalué sur les
+1 000 clients de test de la référence (ROC-AUC 0,868, rappel 0,696, précision 0,582) ; les
+métriques enregistrées de V3 (XGBoost, réentraînée après drift simulé) proviennent d'un autre
+jeu de 400 lignes et ne sont pas directement comparables. Sur un jeu commun de 3 000 clients
+jamais vus (contrôle local du 21/10/2026), V5 et V3 ont le même ROC-AUC (0,862) ; V5 a un meilleur
+rappel (0,712 contre 0,455), V3 une meilleure précision et une meilleure calibration. Un candidat
+n'est promu que si son ROC-AUC est ≥ celui du champion + `min_improvement` et son rappel ≥ celui
+du champion − `max_recall_drop` ; avec la configuration actuelle (0,0 et 0,0), il ne doit
+dégrader ni l'un ni l'autre. La précision ne participe pas à la décision. Les métriques issues de
+jeux différents doivent être interprétées avec prudence.
